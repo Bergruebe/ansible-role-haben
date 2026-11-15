@@ -1,0 +1,26 @@
+# SPDX-FileCopyrightText: 2023 Slavi Pantaleev
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+---
+- name: Perform Haben installation tasks
+  when: haben_enabled | bool
+  tags:
+    - setup-all
+    - setup-haben
+    - install-all
+    - install-haben
+  block:
+    - name: Validate Haben configuration
+      ansible.builtin.include_tasks: "{{ role_path }}/tasks/validate_config.yml"
+    - name: Install Haben
+      ansible.builtin.include_tasks: "{{ role_path }}/tasks/install.yml"
+
+- name: Perform Haben uninstallation tasks
+  when: not haben_enabled | bool
+  tags:
+    - setup-all
+    - setup-haben
+  block:
+    - name: Uninstall Haben
+      ansible.builtin.include_tasks: "{{ role_path }}/tasks/uninstall.yml"

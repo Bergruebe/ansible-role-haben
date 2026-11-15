@@ -1,0 +1,80 @@
+# SPDX-FileCopyrightText: 2023 - 2025 Slavi Pantaleev
+# SPDX-FileCopyrightText: 2023 Julian-Samuel Gebühr
+# SPDX-FileCopyrightText: 2023 MASH project contributors
+# SPDX-FileCopyrightText: 2025 Suguru Hirahara
+# SPDX-FileCopyrightText: 2026 Bergruebe
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+---
+- name: Fail if required Haben settings not defined
+  ansible.builtin.fail:
+    msg: >-
+      You need to define a required configuration setting (`{{ item }}`).
+  when: "lookup('vars', item, default='') | string | length == 0"
+  with_items:
+    - haben_uid
+    - haben_gid
+    - haben_hostname
+    - haben_container_network
+    - haben_database_hostname
+    - haben_database_username
+    - haben_database_password
+    - haben_environment_variables_better_auth_secret
+    - haben_environment_variables_haben_encryption_key
+
+- name: Fail if Haben auth secret is too short
+  ansible.builtin.fail:
+    msg: >-
+      `haben_environment_variables_better_auth_secret` must be at least 32 characters long.
+  when: "haben_environment_variables_better_auth_secret | string | length < 32"
+
+- name: Fail if Haben encryption key is invalid
+  ansible.builtin.fail:
+    msg: >-
+      `haben_environment_variables_haben_encryption_key` must be exactly 32 bytes, base64-encoded.
+      Generate it with `openssl rand -base64 32`.
+  when: "haben_environment_variables_haben_encryption_key is not regex('^[A-Za-z0-9+/]{43}=$')"
+
+- name: Fail if Haben setup code is too short
+  ansible.builtin.fail:
+    msg: >-
+      `haben_environment_variables_haben_setup_code` must be at least 8 characters long, or empty.
+  when: "haben_environment_variables_haben_setup_code | string | length in range(1, 8)"
+
+- name: Fail if Haben app database role is only partially defined
+  ansible.builtin.fail:
+    msg: >-
+      You need to define both `haben_database_app_username` and `haben_database_app_password`, or neither.
+  when: "(haben_database_app_username | string | length > 0) != (haben_database_app_password | string | length > 0)"
+
+- name: Fail if Haben app database role is the database owner
+  ansible.builtin.fail:
+    msg: >-
+      `haben_database_app_username` must differ from `haben_database_username`.
+  when: "haben_database_app_username | string | length > 0 and haben_database_app_username == haben_database_username"
+
+- name: Fail if required Haben OpenID Connect settings not defined
+  ansible.builtin.fail:
+    msg: >-
+      You need to define a required configuration setting (`{{ item }}`) when `haben_environment_variables_oidc_only` is `true`.
+  when: "haben_environment_variables_oidc_only | bool and lookup('vars', item, default='') | string | length == 0"
+  with_items:
+    - haben_environment_variables_oidc_issuer
+    - haben_environment_variables_oidc_client_id
+    - haben_environment_variables_oidc_client_secret
+    - haben_environment_variables_oidc_group_inhaber
+    - haben_environment_variables_oidc_group_steuerberatung
+
+- name: Fail if Haben ELSTER manufacturer ID is invalid
+  ansible.builtin.fail:
+    msg: >-
+      `haben_environment_variables_elster_hersteller_id` must be exactly five digits, or empty.
+  when: "haben_environment_variables_elster_hersteller_id | string | length > 0 and haben_environment_variables_elster_hersteller_id | string is not regex('^[0-9]{5}$')"
+
+- name: Fail if Haben hostname does not match the TSDProxy name
+  ansible.builtin.fail:
+    msg: >-
+      With `haben_container_labels_tsdproxy_enabled`, `haben_hostname` needs to be the tailnet address
+      (`{{ haben_container_labels_tsdproxy_name }}.<tailnet>.ts.net`), because Haben accepts a single address only.
+  when: "haben_container_labels_tsdproxy_enabled | bool and not haben_hostname.startswith(haben_container_labels_tsdproxy_name ~ '.')"

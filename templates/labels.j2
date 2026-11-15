@@ -1,0 +1,65 @@
+{#
+SPDX-FileCopyrightText: 2023 Julian-Samuel Gebühr
+SPDX-FileCopyrightText: 2023 Slavi Pantaleev
+SPDX-FileCopyrightText: 2025, 2026 Suguru Hirahara
+SPDX-FileCopyrightText: 2026 Bergruebe
+
+SPDX-License-Identifier: AGPL-3.0-or-later
+#}
+
+{% if haben_container_labels_traefik_enabled %}
+traefik.enable=true
+
+{% if haben_container_labels_traefik_docker_network %}
+traefik.docker.network={{ haben_container_labels_traefik_docker_network }}
+{% endif %}
+
+{% set middlewares = [] %}
+
+{% if haben_container_labels_traefik_compression_middleware_enabled %}
+{% set middlewares = middlewares + [haben_container_labels_traefik_compression_middleware_name] %}
+{% endif %}
+
+{% if haben_container_labels_traefik_additional_request_headers.keys() | length > 0 %}
+{% for name, value in haben_container_labels_traefik_additional_request_headers.items() %}
+traefik.http.middlewares.{{ haben_identifier }}-add-request-headers.headers.customrequestheaders.{{ name }}={{ value }}
+{% endfor %}
+{% set middlewares = middlewares + [haben_identifier + '-add-request-headers'] %}
+{% endif %}
+
+{% if haben_container_labels_traefik_additional_response_headers.keys() | length > 0 %}
+{% for name, value in haben_container_labels_traefik_additional_response_headers.items() %}
+traefik.http.middlewares.{{ haben_identifier }}-add-response-headers.headers.customresponseheaders.{{ name }}={{ value }}
+{% endfor %}
+{% set middlewares = middlewares + [haben_identifier + '-add-response-headers'] %}
+{% endif %}
+
+traefik.http.routers.{{ haben_identifier }}.rule={{ haben_container_labels_traefik_rule }}
+{% if haben_container_labels_traefik_priority | int > 0 %}
+traefik.http.routers.{{ haben_identifier }}.priority={{ haben_container_labels_traefik_priority }}
+{% endif %}
+traefik.http.routers.{{ haben_identifier }}.service={{ haben_identifier }}
+{% if middlewares | length > 0 %}
+traefik.http.routers.{{ haben_identifier }}.middlewares={{ middlewares | join(',') }}
+{% endif %}
+traefik.http.routers.{{ haben_identifier }}.entrypoints={{ haben_container_labels_traefik_entrypoints }}
+traefik.http.routers.{{ haben_identifier }}.tls={{ haben_container_labels_traefik_tls | to_json }}
+{% if haben_container_labels_traefik_tls %}
+traefik.http.routers.{{ haben_identifier }}.tls.certResolver={{ haben_container_labels_traefik_tls_certResolver }}
+{% endif %}
+
+traefik.http.services.{{ haben_identifier }}.loadbalancer.server.port={{ haben_container_http_port }}
+{% endif %}
+
+{% if haben_container_labels_tsdproxy_enabled %}
+tsdproxy.enable=true
+tsdproxy.name={{ haben_container_labels_tsdproxy_name }}
+tsdproxy.port.1=443/https:{{ haben_container_http_port }}/http{{ ', tailscale_funnel' if haben_container_labels_tsdproxy_funnel | bool else '' }}
+tsdproxy.ephemeral={{ haben_container_labels_tsdproxy_ephemeral | to_json }}
+tsdproxy.dash.visible={{ haben_container_labels_tsdproxy_dash_visible | to_json }}
+tsdproxy.dash.label={{ haben_container_labels_tsdproxy_dash_label }}
+{% endif %}
+
+{% for arg in haben_container_labels_additional_labels %}
+{{ arg }}
+{% endfor %}

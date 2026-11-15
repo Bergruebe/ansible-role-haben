@@ -1,0 +1,64 @@
+{#
+SPDX-FileCopyrightText: 2023 Slavi Pantaleev
+SPDX-FileCopyrightText: 2024 Nikita Chernyi
+SPDX-FileCopyrightText: 2026 Suguru Hirahara
+SPDX-FileCopyrightText: 2026 Bergruebe
+
+SPDX-License-Identifier: AGPL-3.0-or-later
+#}
+
+[Unit]
+Description=Haben ({{ haben_identifier }})
+{% for service in haben_systemd_required_services_list %}
+Requires={{ service }}
+After={{ service }}
+{% endfor %}
+{% for service in haben_systemd_wanted_services_list %}
+Wants={{ service }}
+{% endfor %}
+DefaultDependencies=no
+
+[Service]
+Type=simple
+Environment="HOME={{ devture_systemd_docker_base_systemd_unit_home_path }}"
+ExecStartPre={{ devture_systemd_docker_base_host_command_sh }} -c '{{ haben_container_cleanup_command | trim | replace("\n", " ") }}'
+
+ExecStartPre={{ devture_systemd_docker_base_host_command_docker }} create \
+      --rm \
+      --name={{ haben_identifier }} \
+      --log-driver=none \
+      --user={{ haben_uid }}:{{ haben_gid }} \
+      --cap-drop=ALL \
+      --security-opt=no-new-privileges \
+      --read-only \
+      --network={{ haben_container_network }} \
+      {% if haben_container_http_host_bind_port %}
+      -p {{ haben_container_http_host_bind_port }}:{{ haben_container_http_port }} \
+      {% endif %}
+      --env-file={{ haben_base_path }}/env \
+      --label-file={{ haben_base_path }}/labels \
+      --health-interval={{ haben_container_health_interval }} \
+      --mount type=bind,src={{ haben_documents_path }},dst=/var/lib/haben/belege \
+      --mount type=bind,src={{ haben_eric_path }},dst=/var/lib/haben/eric \
+      --mount type=bind,src={{ haben_eric_log_path }},dst=/var/lib/haben/eric-log \
+      --tmpfs=/tmp:rw,nosuid,size={{ haben_container_tmpfs_tmp_size }} \
+      {% for arg in haben_container_extra_arguments %}
+      {{ arg }} \
+      {% endfor %}
+      {{ haben_container_image }}
+
+{% for network in haben_container_additional_networks %}
+ExecStartPre={{ devture_systemd_docker_base_host_command_docker }} network connect {{ network }} {{ haben_identifier }}
+{% endfor %}
+
+ExecStart={{ devture_systemd_docker_base_host_command_docker }} start --attach {{ haben_identifier }}
+
+ExecStop=-{{ devture_systemd_docker_base_host_command_sh }} -c '{{ devture_systemd_docker_base_host_command_docker }} stop -t {{ devture_systemd_docker_base_container_stop_grace_time_seconds }} {{ haben_identifier }} 2>/dev/null || true'
+ExecStop=-{{ devture_systemd_docker_base_host_command_sh }} -c '{{ devture_systemd_docker_base_host_command_docker }} rm {{ haben_identifier }} 2>/dev/null || true'
+
+Restart=always
+RestartSec=30
+SyslogIdentifier={{ haben_identifier }}
+
+[Install]
+WantedBy=multi-user.target

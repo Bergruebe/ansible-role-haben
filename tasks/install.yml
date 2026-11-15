@@ -1,0 +1,90 @@
+# SPDX-FileCopyrightText: 2023, 2024 Slavi Pantaleev
+# SPDX-FileCopyrightText: 2025, 2026 Suguru Hirahara
+# SPDX-FileCopyrightText: 2026 Bergruebe
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+---
+- name: Ensure Haben paths exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0750"
+    owner: "{{ haben_uid }}"
+    group: "{{ haben_gid }}"
+  with_items:
+    - "{{ haben_base_path }}"
+    - "{{ haben_data_path }}"
+    - "{{ haben_documents_path }}"
+    - "{{ haben_eric_path }}"
+    - "{{ haben_eric_log_path }}"
+
+- name: Ensure Haben support files installed
+  ansible.builtin.template:
+    src: "{{ role_path }}/templates/{{ item }}.j2"
+    dest: "{{ haben_base_path }}/{{ item }}"
+    mode: "0640"
+    owner: "{{ haben_uid }}"
+    group: "{{ haben_gid }}"
+  with_items:
+    - env
+    - labels
+  register: haben_support_files_result
+
+- name: Ensure Haben container image is pulled via community.docker.docker_image_pull
+  when: devture_systemd_docker_base_container_image_pull_method == 'ansible-module'
+  community.docker.docker_image_pull:
+    name: "{{ haben_container_image }}"
+    pull: always
+  register: haben_container_image_pull_result_ansible_module
+  retries: "{{ devture_playbook_help_container_retries_count }}"
+  delay: "{{ devture_playbook_help_container_retries_delay }}"
+  until: haben_container_image_pull_result_ansible_module is not failed
+
+- name: Ensure Haben container image is pulled via ansible.builtin.command
+  when: devture_systemd_docker_base_container_image_pull_method == 'command'
+  ansible.builtin.command:
+    cmd: "{{ devture_systemd_docker_base_host_command_docker }} pull {{ haben_container_image }}"
+  register: haben_container_image_pull_result_command
+  retries: "{{ devture_playbook_help_container_retries_count }}"
+  delay: "{{ devture_playbook_help_container_retries_delay }}"
+  until: haben_container_image_pull_result_command is not failed
+  changed_when: "'Downloaded newer image' in haben_container_image_pull_result_command.stdout"
+
+- name: Ensure Haben container network is created via community.docker.docker_network
+  when: devture_systemd_docker_base_container_network_creation_method == 'ansible-module'
+  community.docker.docker_network:
+    enable_ipv6: "{{ devture_systemd_docker_base_ipv6_enabled }}"
+    name: "{{ haben_container_network }}"
+    driver: bridge
+    driver_options: "{{ devture_systemd_docker_base_container_networks_driver_options }}"
+  register: haben_network_creation_result
+
+- name: Ensure Haben container network is created via ansible.builtin.command
+  when: devture_systemd_docker_base_container_network_creation_method == 'command'
+  ansible.builtin.command:
+    cmd: >-
+      {{ devture_systemd_docker_base_host_command_docker }} network create
+      {% if devture_systemd_docker_base_ipv6_enabled %}--ipv6{% endif %}
+      {{ devture_systemd_docker_base_container_networks_driver_options_string }}
+      {{ haben_container_network }}
+  register: haben_network_creation_result
+  changed_when: haben_network_creation_result.rc == 0
+  failed_when: haben_network_creation_result.rc != 0 and 'already exists' not in haben_network_creation_result.stderr
+
+- name: Ensure Haben systemd service is present
+  ansible.builtin.template:
+    src: "{{ role_path }}/templates/systemd/haben.service.j2"
+    dest: "{{ devture_systemd_docker_base_systemd_path }}/{{ haben_identifier }}.service"
+    mode: "0644"
+  register: haben_systemd_service_result
+
+- name: Determine whether Haben needs a restart
+  ansible.builtin.set_fact:
+    haben_restart_necessary: >-
+      {{
+        haben_support_files_result.changed | default(false)
+        or haben_systemd_service_result.changed | default(false)
+        or haben_container_image_pull_result_ansible_module.changed | default(false)
+        or haben_container_image_pull_result_command.changed | default(false)
+      }}

@@ -1,0 +1,77 @@
+# SPDX-FileCopyrightText: 2023 Slavi Pantaleev
+# SPDX-FileCopyrightText: 2025 Suguru Hirahara
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+---
+- name: Check existence of Haben systemd service
+  ansible.builtin.stat:
+    path: "{{ devture_systemd_docker_base_systemd_path }}/{{ haben_identifier }}.service"
+  register: haben_service_stat
+
+- name: Uninstall Haben systemd services and files
+  when: haben_service_stat.stat.exists | bool
+  block:
+    - name: Ensure Haben systemd service is stopped
+      ansible.builtin.service:
+        name: "{{ haben_identifier }}"
+        state: stopped
+        enabled: false
+        daemon_reload: true
+
+    - name: Ensure Haben systemd service does not exist
+      ansible.builtin.file:
+        path: "{{ devture_systemd_docker_base_systemd_path }}/{{ haben_identifier }}.service"
+        state: absent
+
+    - name: Ensure Haben support files do not exist
+      ansible.builtin.file:
+        path: "{{ haben_base_path }}/{{ item }}"
+        state: absent
+      with_items:
+        - env
+        - labels
+
+    - name: Ensure Haben container network does not exist
+      when: haben_container_network_deletion_enabled
+      block:
+        - name: Ensure Haben container network does not exist via community.docker.docker_network
+          when: devture_systemd_docker_base_container_network_creation_method == 'ansible-module'
+          community.docker.docker_network:
+            name: "{{ haben_container_network }}"
+            state: absent
+          register: haben_network_deletion_result
+
+        - name: Ensure Haben container network does not exist via ansible.builtin.command
+          when: devture_systemd_docker_base_container_network_creation_method == 'command'
+          ansible.builtin.command:
+            cmd: >-
+              {{ devture_systemd_docker_base_host_command_docker }} network rm
+              {{ haben_container_network }}
+          register: haben_network_deletion_result
+          changed_when: haben_container_network in haben_network_deletion_result.stdout
+
+    - name: Ensure Haben base path does not exist if empty
+      ansible.builtin.command:
+        cmd: "rmdir {{ haben_base_path }}"
+      register: haben_base_path_deletion_result
+      changed_when: haben_base_path_deletion_result.rc == 0
+      failed_when: false
+
+- name: Check existence of Haben data path
+  ansible.builtin.stat:
+    path: "{{ haben_data_path }}"
+  register: haben_data_path_stat
+
+# We just want to notify the user. Deleting data is too destructive.
+- name: Inject the message about the remaining Haben data path
+  when: haben_data_path_stat.stat.exists | bool
+  ansible.builtin.set_fact:
+    devture_playbook_runtime_messages_list: |
+      {{
+        devture_playbook_runtime_messages_list | default([])
+        +
+        [
+          "Note: As the local Haben instance has been removed, some old data remains in `" + haben_data_path + "`. Feel free to delete it."
+        ]
+      }}
