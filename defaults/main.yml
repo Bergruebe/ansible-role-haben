@@ -21,7 +21,7 @@ haben_eric_path: "{{ haben_data_path }}/eric"
 haben_eric_log_path: "{{ haben_data_path }}/eric-log"
 
 # renovate: datasource=docker depName=tristanteu/haben versioning=semver
-haben_version: 0.9.0
+haben_version: 0.14.0
 
 haben_uid: ""
 haben_gid: ""
